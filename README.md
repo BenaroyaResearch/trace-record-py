@@ -1,35 +1,27 @@
 # trace-recorder
 
-**Lightweight, self-hosted LangChain agent tracer.** Capture tool calls, LLM usage, token counts, and timing without external dependencies or API keys.
+Self-hosted tracer for LangChain agents. Captures tool calls, LLM usage, token counts, and timing. No external dependencies or API keys required.
 
-## Why trace-recorder?
+## When to use this
 
-LangSmith is great, but sometimes you need observability that:
-- **Stays local** — no data egress, no external API keys
-- **Persists where you want** — MongoDB, Postgres, S3, wherever
-- **Costs nothing** — no metered pricing
-- **Works in restricted environments** — HIPAA, air-gapped, institutional compliance
+Use trace-recorder when you need local observability without external services. Useful for:
+- Air-gapped or compliance-restricted environments
+- Local persistence (MongoDB, Postgres, S3, etc.)
+- No metered pricing or data egress
 
-`trace-recorder` bridges LangChain's callback system into a structured dict you can persist however you like.
+Converts LangChain callbacks into a structured dict you can persist anywhere.
 
 ## Installation
 
 ```bash
 uv pip install trace-recorder
+# or: pip install trace-recorder
 ```
 
-Or install in development mode:
-
+Development mode:
 ```bash
 uv pip install -e /path/to/trace-recorder
-```
-
-Alternatively, using pip:
-
-```bash
-pip install trace-recorder
-# or for development:
-pip install -e /path/to/trace-recorder
+# or: pip install -e /path/to/trace-recorder
 ```
 
 ## Quick Start
@@ -57,27 +49,23 @@ response = llm.invoke([HumanMessage(content="What is the capital of France?")])
 # Finalize and get the trace summary
 summary = trace.finalize(status="success")
 
-# summary is a plain dict with:
-# - trace_id, session_id, username, question
-# - created_at, latency_ms, status
-# - tool_path, tool_calls (with timing)
-# - llm_calls, token_usage
-# - route_path, internal_steps
-# - extracted_properties (from property_extractor)
-# - metadata (custom fields)
+# Summary is a dict containing:
+# trace_id, session_id, username, question, created_at, latency_ms, status
+# tool_path, tool_calls (with timing), llm_calls, token_usage
+# route_path, internal_steps, extracted_properties, metadata
 
-# Persist it however you want
+# Persist however you want
 print(summary)
-# or: await db.traces.insert_one(summary)
-# or: save_to_postgres(summary)
-# or: s3.put_object(Body=json.dumps(summary), ...)
+# await db.traces.insert_one(summary)
+# save_to_postgres(summary)
+# s3.put_object(Body=json.dumps(summary), ...)
 ```
 
 ## Features
 
-### 🎯 Tool Call Tracking
+### Tool Call Tracking
 
-Automatically captures every tool invocation with timing:
+Captures every tool invocation with timing:
 
 ```python
 summary["tool_path"]  # ["search_database", "calculate_results", "format_output"]
@@ -89,9 +77,9 @@ summary["tool_calls"]
 # ]
 ```
 
-### 💰 Token Usage Tracking
+### Token Usage Tracking
 
-Best-effort extraction from OpenAI, Anthropic, and other providers:
+Extracts token usage from OpenAI, Anthropic, and other providers:
 
 ```python
 summary["token_usage"]
@@ -101,29 +89,26 @@ summary["llm_calls"]  # 3
 summary["llm_calls_breakdown"]  # {"langchain": 2, "manual": 1}
 ```
 
-### 🔌 Domain-Specific Property Extraction
+### Property Extraction
 
-Add a custom `property_extractor` to pull domain-specific data from tool inputs:
+Extract domain-specific data from tool inputs with a custom `property_extractor`:
 
 ```python
 def extract_datasets(tool_input):
     """Extract dataset names from tool calls."""
     datasets = tool_input.get("datasets", [])
-    return {
-        "datasets_used": set(d for d in datasets if isinstance(d, str))
-    }
+    return {"datasets_used": set(d for d in datasets if isinstance(d, str))}
 
 trace = TraceRecorder(
     trace_id="trace-123",
     property_extractor=extract_datasets,
 )
 
-# After tools run with {"datasets": ["study1", "study2"]}
-summary["extracted_properties"]
-# {"datasets_used": ["study1", "study2"]}  # sorted list
+# Tool calls with {"datasets": ["study1", "study2"]} will populate:
+summary["extracted_properties"]  # {"datasets_used": ["study1", "study2"]}
 ```
 
-### 📍 Route & Internal Step Tracking
+### Route and Internal Step Tracking
 
 Record agent state transitions and custom processing steps:
 
@@ -144,7 +129,7 @@ summary["internal_steps"]
 # [{"name": "data_validation", "status": "success", "latency_ms": 12.3, "metadata": {...}}]
 ```
 
-### 🎛️ Manual LLM Call Recording
+### Manual LLM Call Recording
 
 For LLM calls outside of LangChain's callback system:
 
@@ -156,7 +141,7 @@ trace.record_manual_llm_call(
 )
 ```
 
-### 🌍 Context Variable Support
+### Context Variable Support
 
 Use `set_active_trace()` to make a trace available in the current async context:
 
@@ -179,8 +164,6 @@ clear_active_trace(token)
 
 ### `TraceRecorder`
 
-Main accumulator class.
-
 **Constructor:**
 ```python
 TraceRecorder(
@@ -193,7 +176,7 @@ TraceRecorder(
 ```
 
 **Methods:**
-- `record_event(event: dict)` — Process LangChain callback event (usually via `TraceCallbackHandler`)
+- `record_event(event: dict)` — Process LangChain callback event
 - `record_route_step(node_name: str)` — Record a state/node transition
 - `record_internal_step(name, status="success", latency_ms=None, metadata=None)` — Record custom step
 - `record_manual_llm_call(label, usage=None, latency_ms=None, status="success")` — Record non-LangChain LLM call
@@ -201,29 +184,21 @@ TraceRecorder(
 
 ### `TraceCallbackHandler`
 
-LangChain async callback handler.
+LangChain callback handler. Pass to LangChain components via `callbacks=[handler]`.
 
 ```python
-from langchain_core.callbacks import AsyncCallbackHandler
-
 callback = TraceCallbackHandler(trace)
-# Pass to LangChain components via callbacks=[callback]
 ```
 
 ### `PropertyExtractor`
 
-Type alias for the property extractor hook:
+Callable that extracts domain-specific properties from tool inputs:
 
 ```python
 PropertyExtractor = Callable[[Dict[str, Any]], Dict[str, set]]
-```
 
-Example:
-```python
 def my_extractor(tool_input: dict) -> dict[str, set]:
-    return {
-        "datasets_used": set(tool_input.get("datasets", []))
-    }
+    return {"datasets_used": set(tool_input.get("datasets", []))}
 ```
 
 ## Persistence Examples
@@ -295,19 +270,17 @@ MIT
 
 ## Contributing
 
-Contributions welcome! This is a small, focused library. Please keep PRs scoped and well-tested.
+Pull requests welcome. Keep changes focused and well-tested.
 
 ## Roadmap
 
-- [ ] Streaming trace output (for long-running agents)
-- [ ] Built-in formatters (JSON, MessagePack, Parquet)
-- [ ] Optional structured output validation (Pydantic models)
-- [ ] Example integrations (FastAPI, LangGraph, LangServe)
+- Streaming trace output for long-running agents
+- Built-in formatters (JSON, MessagePack, Parquet)
+- Optional Pydantic model validation
+- Example integrations (FastAPI, LangGraph, LangServe)
 
 ## Related Projects
 
-- **LangSmith** — Hosted tracing from LangChain (SaaS)
-- **Phoenix** — Open-source LLM observability by Arize
+- **LangSmith** — Hosted tracing from LangChain
+- **Phoenix** — Open-source LLM observability from Arize
 - **Helicone** — Hosted LLM observability
-
-`trace-recorder` is for when you need something simpler, local, and with zero external dependencies.
